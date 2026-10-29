@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<title>GPS &amp; Kompass</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+  :root{
+    --bg:#0b1220; --card:#121b2e; --card-border:#1f2d47;
+    --fg:#e7edf7; --muted:#8694ab; --accent:#4cc2ff; --accent2:#7fffb0;
+    --warn:#ffb454; --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0; background:var(--bg); color:var(--fg); font-family:var(--font);}
+  body{
+    padding: 16px max(16px, env(safe-area-inset-right,0px)) 32px max(16px, env(safe-area-inset-left,0px));
+    min-height:100vh;
+  }
+  h1{font-size:1.3rem; margin:0 0 4px;}
+  .sub{color:var(--muted); font-size:0.85rem; margin:0 0 20px;}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:12px;}
+  .card{
+    background:var(--card); border:1px solid var(--card-border); border-radius:14px;
+    padding:14px 16px;
+  }
+  .card .label{color:var(--muted); font-size:0.72rem; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;}
+  .card .value{font-size:1.4rem; font-weight:600; font-variant-numeric:tabular-nums; word-break:break-word;}
+  .card .unit{font-size:0.85rem; color:var(--muted); font-weight:400; margin-left:2px;}
+  section{margin-bottom:28px;}
+  section > h2{font-size:1rem; color:var(--accent); margin:0 0 10px; display:flex; align-items:center; gap:8px;}
+  .status{display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--muted);}
+  .status.ok{background:var(--accent2);}
+  .status.err{background:#ff6b6b;}
+  button{
+    background:var(--accent); color:#06121f; border:none; border-radius:10px;
+    padding:12px 18px; font-size:0.95rem; font-weight:600; cursor:pointer; margin:4px 6px 4px 0;
+  }
+  button:disabled{opacity:0.5;}
+  button.secondary{background:var(--card); color:var(--fg); border:1px solid var(--card-border);}
+  .msg{font-size:0.85rem; color:var(--warn); margin-top:8px;}
+  .compass-wrap{display:flex; align-items:center; gap:20px; flex-wrap:wrap;}
+  #compassCanvas{background:var(--card); border:1px solid var(--card-border); border-radius:50%;}
+  footer{color:var(--muted); font-size:0.75rem; text-align:center; margin-top:30px;}
+  a{color:var(--accent);}
+</style>
+</head>
+<body>
+
+  <h1>GPS &amp; Kompass</h1>
+  <p class="sub">Alle verfügbaren Sensordaten deines Geräts, live.</p>
+
+  <section>
+    <h2><span class="status" id="gpsStatus"></span> Standort</h2>
+    <button id="startGps">GPS starten</button>
+    <button id="stopGps" class="secondary" disabled>Stoppen</button>
+    <div class="msg" id="gpsMsg"></div>
+    <div class="grid" style="margin-top:12px;">
+      <div class="card"><div class="label">Breitengrad</div><div class="value" id="lat">–</div></div>
+      <div class="card"><div class="label">Längengrad</div><div class="value" id="lon">–</div></div>
+      <div class="card"><div class="label">Genauigkeit</div><div class="value" id="acc">–<span class="unit">m</span></div></div>
+      <div class="card"><div class="label">Höhe</div><div class="value" id="alt">–<span class="unit">m</span></div></div>
+      <div class="card"><div class="label">Höhengenauigkeit</div><div class="value" id="altAcc">–<span class="unit">m</span></div></div>
+      <div class="card"><div class="label">Richtung (Fahrt)</div><div class="value" id="heading">–<span class="unit">°</span></div></div>
+      <div class="card"><div class="label">Geschwindigkeit</div><div class="value" id="speed">–<span class="unit">km/h</span></div></div>
+      <div class="card"><div class="label">Zeitstempel</div><div class="value" id="ts" style="font-size:0.95rem;">–</div></div>
+      <div class="card"><div class="label">Updates empfangen</div><div class="value" id="count">0</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="status" id="compassStatus"></span> Kompass &amp; Bewegung</h2>
+    <button id="startCompass">Kompass starten</button>
+    <div class="msg" id="compassMsg"></div>
+    <div class="compass-wrap" style="margin-top:12px;">
+      <canvas id="compassCanvas" width="160" height="160"></canvas>
+      <div class="grid" style="flex:1; min-width:200px;">
+        <div class="card"><div class="label">Kompass-Richtung</div><div class="value" id="compassHeading">–<span class="unit">°</span></div></div>
+        <div class="card"><div class="label">Alpha (Z / Richtung)</div><div class="value" id="alpha">–<span class="unit">°</span></div></div>
+        <div class="card"><div class="label">Beta (X / vor-zurück kippen)</div><div class="value" id="beta">–<span class="unit">°</span></div></div>
+        <div class="card"><div class="label">Gamma (Y / seitlich kippen)</div><div class="value" id="gamma">–<span class="unit">°</span></div></div>
+        <div class="card"><div class="label">Absolute Orientierung</div><div class="value" id="absolute" style="font-size:0.95rem;">–</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Weitere Infos</h2>
+    <div class="grid">
+      <div class="card"><div class="label">Online-Status</div><div class="value" id="online" style="font-size:1rem;">–</div></div>
+      <div class="card"><div class="label">Standalone (installiert)</div><div class="value" id="standalone" style="font-size:1rem;">–</div></div>
+      <div class="card"><div class="label">Plattform</div><div class="value" id="platform" style="font-size:0.9rem;">–</div></div>
+    </div>
+  </section>
+
+  <footer>Läuft komplett lokal auf deinem Gerät · keine Daten verlassen das Handy</footer>
+
+<script>
+// ---------- GPS ----------
+const gpsStatus = document.getElementById('gpsStatus');
+const gpsMsg = document.getElementById('gpsMsg');
+let watchId = null;
+let updateCount = 0;
+
+function fmt(n, digits){
+  return (n === null || n === undefined || Number.isNaN(n)) ? '–' : n.toFixed(digits);
+}
+
+function onPosition(pos){
+  const c = pos.coords;
+  document.getElementById('lat').textContent = fmt(c.latitude, 6);
+  document.getElementById('lon').textContent = fmt(c.longitude, 6);
+  document.getElementById('acc').innerHTML = fmt(c.accuracy, 1) + '<span class="unit">m</span>';
+  document.getElementById('alt').innerHTML = (c.altitude === null ? '–' : fmt(c.altitude,1)) + '<span class="unit">m</span>';
+  document.getElementById('altAcc').innerHTML = (c.altitudeAccuracy === null ? '–' : fmt(c.altitudeAccuracy,1)) + '<span class="unit">m</span>';
+  document.getElementById('heading').innerHTML = (c.heading === null ? '–' : fmt(c.heading,0)) + '<span class="unit">°</span>';
+  document.getElementById('speed').innerHTML = (c.speed === null ? '–' : fmt(c.speed*3.6,1)) + '<span class="unit">km/h</span>';
+  document.getElementById('ts').textContent = new Date(pos.timestamp).toLocaleTimeString('de-DE');
+  updateCount++;
+  document.getElementById('count').textContent = updateCount;
+  gpsStatus.className = 'status ok';
+  gpsMsg.textContent = '';
+}
+
+function onGpsError(err){
+  gpsStatus.className = 'status err';
+  const map = {1:'Berechtigung verweigert', 2:'Position nicht verfügbar', 3:'Zeitüberschreitung'};
+  gpsMsg.textContent = 'Fehler: ' + (map[err.code] || err.message);
+}
+
+document.getElementById('startGps').addEventListener('click', () => {
+  if (!('geolocation' in navigator)) {
+    gpsMsg.textContent = 'Geolocation wird von diesem Browser nicht unterstützt.';
+    return;
+  }
+  watchId = navigator.geolocation.watchPosition(onPosition, onGpsError, {
+    enableHighAccuracy: true, maximumAge: 0, timeout: 10000
+  });
+  document.getElementById('startGps').disabled = true;
+  document.getElementById('stopGps').disabled = false;
+});
+
+document.getElementById('stopGps').addEventListener('click', () => {
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+  document.getElementById('startGps').disabled = false;
+  document.getElementById('stopGps').disabled = true;
+  gpsStatus.className = 'status';
+});
+
+// ---------- Kompass / Device Orientation ----------
+const compassStatus = document.getElementById('compassStatus');
+const compassMsg = document.getElementById('compassMsg');
+const canvas = document.getElementById('compassCanvas');
+const ctx = canvas.getContext('2d');
+
+function drawCompass(heading){
+  const w = canvas.width, h = canvas.height, r = w/2 - 10;
+  ctx.clearRect(0,0,w,h);
+  ctx.save();
+  ctx.translate(w/2, h/2);
+  // dial
+  ctx.strokeStyle = '#1f2d47';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.stroke();
+  ctx.rotate(-heading * Math.PI/180);
+  // ticks + N/E/S/W
+  const labels = [['N',0],['E',90],['S',180],['W',270]];
+  ctx.font = '600 14px -apple-system, sans-serif';
+  ctx.fillStyle = '#8694ab';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  labels.forEach(([txt, deg]) => {
+    const a = deg * Math.PI/180;
+    ctx.save();
+    ctx.rotate(a);
+    ctx.translate(0, -r+14);
+    ctx.rotate(-a + heading*Math.PI/180);
+    ctx.fillStyle = txt === 'N' ? '#ff6b6b' : '#8694ab';
+    ctx.fillText(txt, 0, 0);
+    ctx.restore();
+  });
+  // needle
+  ctx.beginPath();
+  ctx.moveTo(0, -r+28);
+  ctx.lineTo(-7, 10);
+  ctx.lineTo(7, 10);
+  ctx.closePath();
+  ctx.fillStyle = '#4cc2ff';
+  ctx.fill();
+  ctx.restore();
+}
+drawCompass(0);
+
+function onOrientation(e){
+  let heading = null;
+  if (typeof e.webkitCompassHeading === 'number') {
+    heading = e.webkitCompassHeading; // iOS: schon echte Kompassrichtung
+  } else if (e.absolute && e.alpha !== null) {
+    heading = 360 - e.alpha; // Android: alpha relativ zu Nord umrechnen
+  } else if (e.alpha !== null) {
+    heading = 360 - e.alpha;
+  }
+  document.getElementById('alpha').innerHTML = (e.alpha === null ? '–' : fmt(e.alpha,1)) + '<span class="unit">°</span>';
+  document.getElementById('beta').innerHTML = (e.beta === null ? '–' : fmt(e.beta,1)) + '<span class="unit">°</span>';
+  document.getElementById('gamma').innerHTML = (e.gamma === null ? '–' : fmt(e.gamma,1)) + '<span class="unit">°</span>';
+  document.getElementById('absolute').textContent = e.absolute ? 'Ja (echte Himmelsrichtung)' : 'Nein (nur relativ)';
+  if (heading !== null) {
+    document.getElementById('compassHeading').innerHTML = fmt(heading,0) + '<span class="unit">°</span>';
+    drawCompass(heading);
+  }
+  compassStatus.className = 'status ok';
+}
+
+document.getElementById('startCompass').addEventListener('click', async () => {
+  compassMsg.textContent = '';
+  // iOS 13+ braucht explizite Erlaubnis per Nutzergeste
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      const state = await DeviceOrientationEvent.requestPermission();
+      if (state !== 'granted') {
+        compassMsg.textContent = 'Berechtigung für Bewegungssensoren verweigert.';
+        compassStatus.className = 'status err';
+        return;
+      }
+    } catch (err) {
+      compassMsg.textContent = 'Fehler bei der Berechtigungsanfrage: ' + err.message;
+      compassStatus.className = 'status err';
+      return;
+    }
+  }
+  if ('ondeviceorientationabsolute' in window) {
+    window.addEventListener('deviceorientationabsolute', onOrientation, true);
+  } else if ('ondeviceorientation' in window) {
+    window.addEventListener('deviceorientation', onOrientation, true);
+  } else {
+    compassMsg.textContent = 'Dieses Gerät/Browser unterstützt keine Orientierungssensoren.';
+    compassStatus.className = 'status err';
+  }
+});
+
+// ---------- Sonstige Infos ----------
+document.getElementById('online').textContent = navigator.onLine ? 'Online' : 'Offline';
+window.addEventListener('online', () => document.getElementById('online').textContent = 'Online');
+window.addEventListener('offline', () => document.getElementById('online').textContent = 'Offline');
+document.getElementById('standalone').textContent =
+  (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) ? 'Ja' : 'Nein (im Browser)';
+document.getElementById('platform').textContent = navigator.platform || navigator.userAgent.slice(0, 40);
+
+// ---------- Service Worker ----------
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
